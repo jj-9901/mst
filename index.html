@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Graph Visualization and MST</title>
+    <script type="text/javascript" src="https://unpkg.com/vis-network@9.1.1/dist/vis-network.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 30px;
+            font-family: monospace;
+            font-size: 20px;
+            background-color: #000000; /* Dark pink background for the entire website */
+        }
+
+        h1 {
+            text-align: center;
+            margin-top: 50px;
+            color: white; /* Make the heading color white to stand out on the dark pink background */
+        }
+
+        input, button {
+            margin: 10px;
+            padding: 10px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        #input-container {
+            text-align: center;
+            color: rgb(0, 0, 0);
+            margin: 60px;
+            background-color: rgba(255, 192, 203, 0.719);
+            padding: 50px;
+            border-radius: 20px;
+            box-shadow: 2px 2px 10px rgb(88, 3, 46);
+        }
+
+        #canvas-container {
+            display: flex;
+            justify-content: space-between;
+            height: 100vh;
+        }
+
+        #graph-container, #mst-container {
+            width: 48%;
+            height: 90%;  /* Ensure the canvas fits well */
+            background-color: #fbb6c1ad; /* Baby pink for graph, light pink for MST */
+            border: 2px solid #d7a0a4;
+            border-radius: 10px;
+            margin: 50px;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-size: 20px;
+            box-shadow: 2px 2px 10px rgb(88, 3, 46);
+            padding:50px;
+        }
+
+        #graph, #mst {
+            border-radius: 10px;
+            width: 100%; /* Ensure it fills the width */
+            height: 100%;
+        }
+
+        input {
+            border-radius: 5px;
+            border: none;
+        }
+
+        button {
+            border-radius: 5px;
+            border: none;
+            padding: 15px;
+            transition: .3s;
+        }
+
+        button:hover {
+            background-color: #fbb6c1;
+            color: white;
+            font-size: 17px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Graph Generator & Minimum Spanning Tree (MST)</h1>
+
+    <div id="input-container">
+        <label for="nodes">Enter Nodes (comma separated): </label>
+        <input type="text" id="nodes" placeholder="e.g., A, B, C, D">
+        <br>
+        <label for="edges">Enter Edges (format: from-to-weight, e.g., A-B-5): </label>
+        <input type="text" id="edges" placeholder="e.g., A-B-5, B-C-3">
+        <br>
+        <button onclick="generateGraph()">Generate Graph</button>
+        <button onclick="generateMST()">Generate MST</button>
+    </div>
+
+    <div id="canvas-container">
+        <div id="graph-container">
+            <h3>Graph</h3>
+            <div id="graph"></div>
+        </div>
+
+        <div id="mst-container">
+            <h3>(MST)</h3>
+            <div id="mst"></div>
+        </div>
+    </div>
+
+    <script>
+        class Edge {
+            constructor(src, dest, weight) {
+                this.src = src;
+                this.dest = dest;
+                this.weight = weight;
+            }
+        }
+
+        class KruskalMST {
+            constructor(vertices) {
+                this.vertices = vertices;
+                this.edges = [];
+                this.tree = [];
+            }
+
+            addEdge(src, dest, weight) {
+                this.edges.push(new Edge(src, dest, weight));
+            }
+
+            orderEdges() {
+                this.edges.sort((a, b) => a.weight - b.weight);
+            }
+
+            findParent(parents, vertex) {
+                if (parents[vertex] === vertex) return vertex;
+                return this.findParent(parents, parents[vertex]);
+            }
+
+            union(parents, ranks, src, dest) {
+                let srcParent = this.findParent(parents, src);
+                let destParent = this.findParent(parents, dest);
+
+                if (ranks[srcParent] > ranks[destParent]) {
+                    parents[destParent] = srcParent;
+                } else if (ranks[srcParent] < ranks[destParent]) {
+                    parents[srcParent] = destParent;
+                } else {
+                    parents[destParent] = srcParent;
+                    ranks[srcParent]++;
+                }
+            }
+
+            makeTree() {
+                this.orderEdges();
+                let parents = {};
+                let ranks = {};
+
+                this.vertices.forEach(vertex => {
+                    parents[vertex] = vertex;
+                    ranks[vertex] = 0;
+                });
+
+                for (let edge of this.edges) {
+                    let srcParent = this.findParent(parents, edge.src);
+                    let destParent = this.findParent(parents, edge.dest);
+
+                    if (srcParent !== destParent) {
+                        this.tree.push(edge);
+                        this.union(parents, ranks, srcParent, destParent);
+                    }
+                }
+            }
+
+            getMST() {
+                return this.tree;
+            }
+        }
+
+        let nodes = new vis.DataSet();
+        let graphEdges = new vis.DataSet();
+        let mstEdges = new vis.DataSet();
+        let originalEdges = [];
+
+        function generateGraph() {
+            const nodeInput = document.getElementById('nodes').value;
+            const edgeInput = document.getElementById('edges').value;
+
+            const nodeNames = nodeInput.split(',').map(name => name.trim());
+            const edgeStrings = edgeInput.split(',').map(edge => edge.trim());
+
+            nodes.clear();
+            graphEdges.clear();
+            mstEdges.clear();
+            originalEdges = [];
+
+            nodeNames.forEach((name, index) => {
+                nodes.add({ 
+                    id: index + 1, 
+                    label: name, 
+                    color: '#ffffff',  // White color for node background
+                    font: { color: '#000000' } // Black color for node labels
+                });
+            });
+
+            edgeStrings.forEach(edge => {
+                const [src, dest, weight] = edge.split('-');
+                const weightValue = parseInt(weight);
+                const srcIndex = nodeNames.indexOf(src.trim()) + 1;
+                const destIndex = nodeNames.indexOf(dest.trim()) + 1;
+                graphEdges.add({ from: srcIndex, to: destIndex, label: weight, title: weightValue, color: '#000000' });  // Black color for edges
+                originalEdges.push({ from: srcIndex, to: destIndex, label: weight, title: weightValue });
+            });
+
+            const container = document.getElementById('graph');
+            const data = { nodes: nodes, edges: graphEdges };
+            const options = {
+                physics: true,
+                interaction: { zoomView: false },  // Disable zooming
+                edges: {
+                    color: '#000000',  // Black color for edges
+                },
+                nodes: {
+                    color: '#ffffff',  // White color for nodes
+                    font: { color: '#000000' } // Black color for node labels
+                },
+            };
+            new vis.Network(container, data, options);
+        }
+
+        function generateMST() {
+    const nodeInput = document.getElementById('nodes').value;
+    const edgeInput = document.getElementById('edges').value;
+
+    const nodeNames = nodeInput.split(',').map(name => name.trim());
+    const edgeStrings = edgeInput.split(',').map(edge => edge.trim());
+
+    let kruskal = new KruskalMST(nodeNames);
+
+    edgeStrings.forEach(edge => {
+        const [src, dest, weight] = edge.split('-');
+        const weightValue = parseInt(weight);
+        kruskal.addEdge(src.trim(), dest.trim(), weightValue);
+    });
+
+    kruskal.makeTree();
+
+    const mstEdgesArray = kruskal.getMST();
+    mstEdges.clear();
+
+    mstEdgesArray.forEach(edge => {
+        const srcIndex = nodeNames.indexOf(edge.src) + 1;
+        const destIndex = nodeNames.indexOf(edge.dest) + 1;
+        // Ensure label shows the weight
+        mstEdges.add({
+            from: srcIndex,
+            to: destIndex,
+            label: edge.weight.toString(),  // Ensuring the label is a string
+            title: edge.weight.toString(), // The title will also display on hover
+            color: '#000000',  // Color for MST edges
+            font: { align: 'top', color: '#000000', size: 16 },  // Adjust the font for better visibility
+            smooth: { type: 'continuous' }  // Smooth edges
+        });
+    });
+
+    const container = document.getElementById('mst');
+    const data = { nodes: nodes, edges: mstEdges };
+    const options = {
+        physics: false,
+        interaction: { zoomView: false },  // Disable zooming
+        edges: {
+            color: '#000000',  // Black color for edges in MST
+            font: { color: '#000000' }  // Ensuring labels are black
+        },
+        nodes: {
+            color: '#ffffff',  // White color for nodes
+            font: { color: '#000000' }  // Black color for node labels
+        },
+        layout: { randomSeed: 2 },  // Control layout randomness for consistency
+    };
+    new vis.Network(container, data, options);
+}
+
+    </script>
+</body>
+</html>
